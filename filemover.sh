@@ -67,7 +67,7 @@ for file in "$source_directory"/*."$file_extension"; do
     echo "Скопирован файл: $file -> $filename_without_extension.$new_file_extension"
 done
 
-#7. Архивация исходных файлов.
+#7. Создание архива исходных файлов, проверка целостности и их удаление
 
 echo -e "\n=== Шаг 7: Архивирование и очистка ==="
 
@@ -90,28 +90,40 @@ echo "Список файлов для архивации:" >> "$log_file"
 find "$source_directory" -maxdepth 1 -type f -name "*.${file_extension}" -exec basename {} \; >> "$log_file"
 
 echo "Создание архива исходных файлов..."
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Запуск tar..." >> "$log_file"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Запуск tar (создание архива)..." >> "$log_file"
 
 # Архивируем файлы. Флаг -C позволяет перейти в папку и упаковать файлы без сохранения абсолютных путей
 find "$source_directory" -maxdepth 1 -type f -name "*.${file_extension}" -exec basename {} \; | \
     tar -czf "$archive_path" -C "$source_directory" -T - 2>> "$log_file"
 
 if [ $? -eq 0 ]; then
-    echo "Архив '$archive_name' успешно создан в целевой директории."
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] УСПЕХ: Архив $archive_name успешно создан." >> "$log_file"
+    echo "Архив успешно создан. Запуск проверки целостности..."
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Запуск тестирования архива (tar -tzf)..." >> "$log_file"
     
-    echo "Удаление исходных файлов с расширением *.${file_extension} из исходной директории..."
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Удаление исходных файлов..." >> "$log_file"
+    # 2. ПРОВЕРКА АРХИВА: тестируем чтение содержимого архива
+    tar -tzf "$archive_path" > /dev/null 2>> "$log_file"
     
-    # Удаляем и пишем статус в лог
-    find "$source_directory" -maxdepth 1 -type f -name "*.${file_extension}" -delete 2>> "$log_file"
-    
+    if [ $? -eq 0 ]; then
+        echo "Проверка успешна! Архив целостен."
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] УСПЕХ: Проверка архива пройдена. Архив исправен." >> "$log_file"
+
+        # 3. Удаляем исходные файлы только после успешного теста
+        echo "Удаление исходных файлов со старым расширением..."
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Удаление файлов из исходной директории..." >> "$log_file"
+
+        find "$source_directory" -maxdepth 1 -type f -name "*.${file_extension}" -delete 2>> "$log_file"
+
     echo "Исходные файлы удалены."
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ЗАВЕРШЕНО: Файлы удалены из исходной директории." >> "$log_file"
+    else
+        echo "КРИТИЧЕСКАЯ ОШИБКА: Созданный архив поврежден или не читается! Удаление исходных файлов ОТМЕНЕНО."
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] КРИТИЧЕСКАЯ ОШИБКА: Архив поврежден при проверке. Удаление отменено!" >> "$log_file"
+        exit 1
+    fi
 else
-    echo "Ошибка при создании архива! Исходные файлы не будут удалены."
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ОШИБКА: Не удалось создать архив. Удаление файлов отменено." >> "$log_file"
+    echo "Ошибка при создании архива! Процесс остановлен."
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ОШИБКА: Не удалось создать архив на этапе записи." >> "$log_file"
     exit 1
 fi
 
-echo "Лог-файл сохранен по пути: $log_file"
+echo "Лог процесса: $log_file"
